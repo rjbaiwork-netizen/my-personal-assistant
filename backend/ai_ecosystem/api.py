@@ -10,6 +10,7 @@ from .layer1_manager import Layer1Manager
 from .layer2_rag_store import search as brain_search, status as brain_status
 from .layer3_bridge import Layer3Bridge
 from .security import authorized, sanitize
+import os
 
 router = APIRouter()
 layer1 = Layer1Manager()
@@ -39,7 +40,9 @@ def ai_health() -> dict[str, Any]:
 @router.get("/api/ai/profiles")
 def profiles(x_ai_ecosystem_secret: str = Header(default="")) -> dict[str, Any]:
     _auth(x_ai_ecosystem_secret)
-    return {"layer1": {"model": "configured via legacy runtime", "secret": "masked"}, "layer2": brain_status(), "layer3": {"mutation_enabled": __import__("os").getenv("AI_BRIDGE_ALLOW_MUTATIONS", "false").lower() == "true"}}
+    from ..config_manager import read as read_config
+    config = read_config()
+    return {"layer1": {"model": config.get("gemini_model", "gemini-3.7-flash"), "fallbacks": ["gemini-3.7-flash", "gemini-3.5-flash-lite"], "api_key": "configured" if config.get("gemini_api_key") or os.getenv("GEMINI_API_KEY") else "not_configured"}, "layer2": brain_status(), "layer3": {"mutation_enabled": os.getenv("AI_BRIDGE_ALLOW_MUTATIONS", "false").lower() == "true"}}
 
 
 @router.post("/api/layer1/chat")
