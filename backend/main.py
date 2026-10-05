@@ -263,6 +263,8 @@ async def run_scheduled_backup() -> None:
     path = await asyncio.to_thread(create_rotated_backup)
     destination = "local"
     try:
+        await asyncio.to_thread(sync_excel_to_s3)
+        await asyncio.to_thread(cleanup_remote_backups)
         remote = await asyncio.to_thread(upload_to_s3, path)
         if remote:
             destination = remote
@@ -549,6 +551,8 @@ async def backup():
         path = await asyncio.to_thread(create_rotated_backup)
         destination = "local"
         try:
+            await asyncio.to_thread(sync_excel_to_s3)
+            await asyncio.to_thread(cleanup_remote_backups)
             remote = await asyncio.to_thread(upload_to_s3, path)
             if remote:
                 destination = remote
