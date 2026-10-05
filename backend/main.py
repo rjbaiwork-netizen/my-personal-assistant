@@ -32,6 +32,7 @@ from .rss_worker import recent_items, sync_feeds
 from .security_monitor import alert_unauthorized, check_resource_pressure
 from .telegram_bot import configure_scrape_callback, handle_webhook, initialize as initialize_telegram_bot, shutdown as shutdown_telegram_bot, validate_mini_app_init_data
 from .config_manager import read as read_dynamic_config, update as update_dynamic_config, public as public_config, set_runtime_environment
+from .activity_logger import log_activity, recent_activity, activity_status
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 STORAGE_DIR = Path(os.getenv("STORAGE_DIR", str(BASE_DIR / "storage"))).resolve()
@@ -251,6 +252,10 @@ def health() -> dict[str, Any]:
 def usage() -> dict[str, Any]:
     return record_server_runtime()
 
+@app.get("/api/activity")
+def activity(limit: int = 100, source: str = "", status: str = "") -> dict[str, Any]:
+    return {"records": recent_activity(limit, source, status), "storage": activity_status()}
+
 @app.get("/api/automation")
 def automation() -> dict[str, Any]:
     return {
@@ -314,6 +319,7 @@ def admin_update_config(payload: AdminConfigRequest, request: Request):
     if values.get("gemini_api_key") in ("", "••••••••"):
         values["gemini_api_key"] = current.get("gemini_api_key", "")
     config = apply_runtime_config(values)
+    log_activity(source="admin_api", actor="dashboard", action="config_update", command="/admin/config", output=public_config(config), metadata={"fields": list(values.keys())})
     return {"ok": True, "config": public_config(config), "scheduler": automation_scheduler.status() if automation_scheduler else {"enabled": False, "jobs": []}}
 
 @app.get("/api/settings")
@@ -340,13 +346,19 @@ def update_settings(payload: SettingsRequest, request: Request) -> dict[str, Any
 
 
 @app.post("/api/scrape")
-async def trigger_scrape(payload: ScrapeRequest) -> dict[str, Any]:
+async def trigger_scrape(payload: ScrapeRequest, request: Request) -> dict[str, Any]:
+    actor = request.headers.get("X-Actor", "dashboard")
     try:
         result = await asyncio.to_thread(scrape_and_save, **payload.model_dump())
         await notify_scrape(result)
+        log_activity(source="dashboard", actor=actor, action="scrape", command="/scrape", output=result, metadata=payload.model_dump())
         return {"ok": True, **result}
     except ValueError as exc:
+        log_activity(source="dashboard", actor=actor, action="scrape", command="/scrape", status="error", output=str(exc), metadata=payload.model_dump())
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        log_activity(source="dashboard", actor=actor, action="scrape", command="/scrape", status="error", output=str(exc))
+        raise
 
 
 @app.get("/api/logs")
@@ -373,7 +385,8 @@ def logs_search(
 
 
 @app.post("/api/chat")
-async def chat(payload: ChatRequest) -> dict[str, Any]:
+async def chat(payload: ChatRequest, request: Request) -> dict[str, Any]:
+    actor = request.headers.get("X-Actor", "dashboard")
     context = ""
     if payload.include_logs:
         context = json.dumps(read_logs(100), ensure_ascii=False, default=str)
@@ -381,6 +394,7 @@ async def chat(payload: ChatRequest) -> dict[str, Any]:
     context = (context + "\n\nLOCAL RAG CONTEXT:\n" + rag_context) if context else rag_context
     answer = await asyncio.to_thread(chat_with_gemini, payload.message, context)
     await notify_ai(payload.message, answer)
+    log_activity(source="dashboard", actor=actor, action="chat", command="/chat", output=answer[:1000], metadata={"message": payload.message[:500]})
     return {"answer": answer}
 
 
@@ -593,7 +607,8 @@ def create_backup() -> Path:
 
 
 @app.post("/api/backup")
-async def backup():
+async def backup(request: Request):
+    actor = request.headers.get("X-Actor", "dashboard")
     try:
         path = await asyncio.to_thread(create_rotated_backup)
         destination = "local"
@@ -606,8 +621,10 @@ async def backup():
         except Exception:
             destination = "local (remote upload failed)"
         await notify_backup(path.name, destination)
+        log_activity(source="dashboard", actor=actor, action="backup", command="/backup", output={"file": path.name, "destination": destination})
         return FileResponse(path, filename=path.name, media_type="application/zip")
     except OSError as exc:
+        log_activity(source="dashboard", actor=actor, action="backup", command="/backup", status="error", output=str(exc))
         raise HTTPException(status_code=500, detail=f"Backup failed: {exc}") from exc
 
 
