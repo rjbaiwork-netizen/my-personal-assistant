@@ -15,7 +15,7 @@ INDEX_PATH = STORAGE_DIR / "rag_index.json"
 EXCEL_DIR = STORAGE_DIR / "excel_files"
 PDF_DIR = STORAGE_DIR / "pdf"
 
-TOKEN_RE = re.compile(r"[\\w]{2,}", re.UNICODE)
+TOKEN_RE = re.compile(r"\\w{2,}", re.UNICODE)
 DIMENSIONS = 384
 
 
