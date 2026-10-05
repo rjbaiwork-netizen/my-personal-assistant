@@ -31,6 +31,7 @@ from .agent_workflow import run_multi_agent_workflow
 from .rss_worker import recent_items, sync_feeds
 from .security_monitor import alert_unauthorized, check_resource_pressure
 from .telegram_bot import configure_scrape_callback, handle_webhook, initialize as initialize_telegram_bot, shutdown as shutdown_telegram_bot, validate_mini_app_init_data
+from .config_manager import read as read_dynamic_config, update as update_dynamic_config, public as public_config, set_runtime_environment
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 STORAGE_DIR = Path(os.getenv("STORAGE_DIR", str(BASE_DIR / "storage"))).resolve()
@@ -52,6 +53,9 @@ DEFAULT_CONFIG = {
 
 
 def load_config() -> dict[str, Any]:
+    return read_dynamic_config()
+
+def _legacy_load_config_disabled() -> dict[str, Any]:
     if not CONFIG_PATH.exists():
         save_config(dict(DEFAULT_CONFIG))
     try:
@@ -70,6 +74,15 @@ def save_config(config: dict[str, Any]) -> None:
     )
     temporary.replace(CONFIG_PATH)
 
+
+def apply_runtime_config(updates: dict[str, Any]) -> dict[str, Any]:
+    config = update_dynamic_config(**updates)
+    set_runtime_environment(config)
+    if "scrape_interval_minutes" in updates:
+        os.environ["SCRAPE_INTERVAL_MINUTES"] = str(config["scrape_interval_minutes"])
+    if automation_scheduler:
+        automation_scheduler.reload()
+    return config
 
 def _today() -> str:
     return datetime.now(timezone.utc).astimezone().date().isoformat()
@@ -272,6 +285,36 @@ async def run_scheduled_backup() -> None:
         destination = "local (remote upload failed)"
     await notify_backup(path.name, destination)
 
+
+class AdminConfigRequest(BaseModel):
+    gemini_api_key: str | None = Field(default=None, max_length=500)
+    gemini_model: str | None = Field(default=None, max_length=100)
+    scrape_interval_minutes: int | None = Field(default=None, ge=1, le=10080)
+    platform_name: str | None = Field(default=None, max_length=100)
+    logo: str | None = Field(default=None, max_length=20)
+    default_storage_mode: str | None = None
+
+@app.get("/api/admin/config")
+def admin_config():
+    return public_config()
+
+@app.post("/api/admin/config")
+def admin_update_config(payload: AdminConfigRequest, request: Request):
+    import hmac
+    expected = os.getenv("ADMIN_CONFIG_SECRET", "").strip()
+    supplied = request.headers.get("X-Admin-Config-Secret", "")
+    if not expected or not hmac.compare_digest(supplied, expected):
+        raise HTTPException(status_code=401, detail="Admin configuration authentication failed.")
+    values = payload.model_dump(exclude_none=True)
+    if values.get("default_storage_mode") not in (None, "append", "new"):
+        raise HTTPException(status_code=400, detail="default_storage_mode must be append or new.")
+    if not values:
+        raise HTTPException(status_code=400, detail="No configuration changes supplied.")
+    current = read_dynamic_config()
+    if values.get("gemini_api_key") in ("", "••••••••"):
+        values["gemini_api_key"] = current.get("gemini_api_key", "")
+    config = apply_runtime_config(values)
+    return {"ok": True, "config": public_config(config), "scheduler": automation_scheduler.status() if automation_scheduler else {"enabled": False, "jobs": []}}
 
 @app.get("/api/settings")
 def get_settings() -> dict[str, Any]:
