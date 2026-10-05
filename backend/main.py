@@ -37,7 +37,7 @@ DEFAULT_CONFIG = {
     "platform_name": "My Personal Assistant",
     "logo": "🤖",
     "gemini_api_key": "",
-    "gemini_model": "gemini-2.5-flash",
+    "gemini_model": "gemini-3.7-flash",
     "default_storage_mode": "append",
 }
 
@@ -129,7 +129,7 @@ class SettingsRequest(BaseModel):
     platform_name: str = Field(default="My Personal Assistant", max_length=100)
     logo: str = Field(default="🤖", max_length=20)
     gemini_api_key: str = Field(default="", max_length=500)
-    gemini_model: str = Field(default="gemini-2.5-flash", max_length=100)
+    gemini_model: str = Field(default="gemini-3.7-flash", max_length=100)
     default_storage_mode: str = "append"
 
 
@@ -153,11 +153,45 @@ app.add_middleware(
 
 @app.get("/api/health")
 def health() -> dict[str, Any]:
+    config = load_config()
+    gemini_key_configured = bool(os.getenv("GEMINI_API_KEY") or config.get("gemini_api_key"))
+    gemini_model = str(
+        os.getenv("GEMINI_MODEL")
+        or config.get("gemini_model")
+        or "gemini-3.7-flash"
+    ).strip()
+
+    storage_writable = False
+    storage_error = None
+    try:
+        STORAGE_DIR.mkdir(parents=True, exist_ok=True)
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            dir=STORAGE_DIR,
+            prefix=".health-",
+            suffix=".tmp",
+            delete=False,
+        ) as probe:
+            probe.write("ok")
+            probe_path = Path(probe.name)
+        probe_path.unlink(missing_ok=True)
+        storage_writable = True
+    except OSError as exc:
+        storage_error = type(exc).__name__
+
     return {
-        "status": "online",
+        "status": "online" if storage_writable else "degraded",
         "service": "my-personal-assistant",
         "version": "3.0.0",
         "storage_dir": str(STORAGE_DIR),
+        "storage_writable": storage_writable,
+        "storage_error": storage_error,
+        "gemini": {
+            "configured": gemini_key_configured,
+            "model": gemini_model,
+            "api_key_exposed": False,
+        },
     }
 
 
