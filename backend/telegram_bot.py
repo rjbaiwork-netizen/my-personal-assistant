@@ -12,6 +12,7 @@ from .scraper import scrape_and_save
 from .security_monitor import system_metrics
 from .telegram_notifier import telegram_configured
 from .config_manager import get, update, public, set_runtime_environment
+from .activity_logger import log_activity
 
 _app: Application | None = None
 _scrape_callback: Callable[[str], Awaitable[dict]] | None = None
@@ -21,6 +22,16 @@ def _authorized(update: Update) -> bool:
     allowed = str(get("telegram_chat_id", os.getenv("TELEGRAM_CHAT_ID", "")) or "").strip()
     chat = update.effective_chat
     return bool(chat) and (not allowed or str(chat.id) == allowed)
+
+def _actor(update: Update) -> str:
+    user = update.effective_user
+    chat = update.effective_chat
+    name = (user.username or user.full_name) if user else ""
+    return f"{name} (chat:{chat.id})" if chat else (name or "telegram")
+
+def _command(update: Update) -> str:
+    text = update.effective_message.text if update.effective_message else ""
+    return (text.split()[0] if text else "telegram_command").strip()
 
 def _apply(values: dict) -> dict:
     config = update(**values)
@@ -39,22 +50,33 @@ def read_config():
     return read()
 
 async def _setkey(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    if not _authorized(update): return
+    command = _command(update); actor = _actor(update)
+    if not _authorized(update):
+        log_activity(source="telegram", actor=actor, action="unauthorized", command=command, status="error", output="Unauthorized command")
+        return
     if not context.args:
         await update.message.reply_text("Usage: /setkey <Gemini API key>"); return
     _apply({"gemini_api_key": context.args[0].strip()})
+    log_activity(source="telegram", actor=actor, action="setmodel_key", command=command, output="Gemini API key updated")
     await update.message.reply_text("✅ Gemini API key updated and active immediately.")
 
 async def _setmodel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    if not _authorized(update): return
+    command = _command(update); actor = _actor(update)
+    if not _authorized(update):
+        log_activity(source="telegram", actor=actor, action="unauthorized", command=command, status="error", output="Unauthorized command")
+        return
     if not context.args:
         await update.message.reply_text("Usage: /setmodel <model_name>"); return
     model = context.args[0].strip()
     _apply({"gemini_model": model})
+    log_activity(source="telegram", actor=actor, action="setmodel", command=command, output={"model": model})
     await update.message.reply_text(f"✅ Gemini model changed to {model}.")
 
 async def _setinterval(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    if not _authorized(update): return
+    command = _command(update); actor = _actor(update)
+    if not _authorized(update):
+        log_activity(source="telegram", actor=actor, action="unauthorized", command=command, status="error", output="Unauthorized command")
+        return
     try:
         minutes = int(context.args[0])
         if not 1 <= minutes <= 10080: raise ValueError
@@ -62,12 +84,17 @@ async def _setinterval(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         await update.message.reply_text("Usage: /setinterval <1-10080 minutes>"); return
     _apply({"scrape_interval_minutes": minutes})
     os.environ["SCRAPE_INTERVAL_MINUTES"] = str(minutes)
-    _reload_runtime()
+    result = _reload_runtime()
+    log_activity(source="telegram", actor=actor, action="setinterval", command=command, output={"minutes": minutes, "scheduler": result["scheduler"]})
     await update.message.reply_text(f"✅ Scrape interval changed to {minutes} minutes.")
 
 async def _reload(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    if not _authorized(update): return
+    command = _command(update); actor = _actor(update)
+    if not _authorized(update):
+        log_activity(source="telegram", actor=actor, action="unauthorized", command=command, status="error", output="Unauthorized command")
+        return
     result = _reload_runtime()
+    log_activity(source="telegram", actor=actor, action="reload", command=command, output=result["scheduler"])
     await update.message.reply_text("♻️ Runtime configuration reloaded.\n" + str(result["scheduler"]))
 
 async def _status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -81,7 +108,10 @@ async def _status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 
 async def _scrape(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    if not _authorized(update): return
+    command = _command(update); actor = _actor(update)
+    if not _authorized(update):
+        log_activity(source="telegram", actor=actor, action="unauthorized", command=command, status="error", output="Unauthorized command")
+        return
     topic = " ".join(context.args).strip()
     if not topic:
         await update.message.reply_text("Usage: /scrape <topic>")
@@ -90,14 +120,19 @@ async def _scrape(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         result = await _scrape_callback(topic)
     else:
         result = scrape_and_save(topic, "All Platforms", "append", "telegram_scrape")
+    log_activity(source="telegram", actor=actor, action="scrape", command=command, output=result, metadata={"topic": topic})
     await update.message.reply_text(
         f"🔎 Scrape complete\nFile: {result.get('file_name')}\nRows: {result.get('rows_added', 0)}"
     )
 
 
 async def _backup(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    if not _authorized(update): return
+    command = _command(update); actor = _actor(update)
+    if not _authorized(update):
+        log_activity(source="telegram", actor=actor, action="unauthorized", command=command, status="error", output="Unauthorized command")
+        return
     path = create_rotated_backup()
+    log_activity(source="telegram", actor=actor, action="backup", command=command, output={"file": path.name})
     await update.message.reply_text(f"💾 Backup complete\n{path.name}")
 
 
