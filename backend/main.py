@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any
 
 import pandas as pd
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel, Field
@@ -25,7 +25,12 @@ from .ai_assistant import chat_with_gemini
 from .scraper import COLUMNS, EXCEL_DIR, list_excel_files, read_logs, scrape_and_save, search_logs
 from .backup_rotation import backup_status, create_rotated_backup, upload_to_s3
 from .scheduler import AutomationScheduler
-from .telegram_notifier import notify_ai, notify_backup, notify_scrape, telegram_configured
+from .telegram_notifier import notify_ai, notify_backup, notify_scrape, telegram_configured, send_telegram_notification
+from .rag_store import context_for, rebuild_index, search as rag_search
+from .agent_workflow import run_multi_agent_workflow
+from .rss_worker import recent_items, sync_feeds
+from .security_monitor import alert_unauthorized, check_resource_pressure
+from .telegram_bot import configure_scrape_callback, handle_webhook, initialize as initialize_telegram_bot, shutdown as shutdown_telegram_bot
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 STORAGE_DIR = Path(os.getenv("STORAGE_DIR", str(BASE_DIR / "storage"))).resolve()
@@ -140,18 +145,40 @@ class SettingsRequest(BaseModel):
 app = FastAPI(title="My Personal Assistant API", version="3.1.0")
 automation_scheduler: AutomationScheduler | None = None
 
+async def scheduled_rss_sync() -> None:
+    await asyncio.to_thread(sync_feeds)
+
+async def scheduled_weekly_report() -> None:
+    items = await asyncio.to_thread(recent_items, 20)
+    if not items:
+        return
+    context = json.dumps(items, ensure_ascii=False)
+    answer = await asyncio.to_thread(chat_with_gemini, "Create a weekly technology-feed summary with key themes and actions.", context)
+    await send_telegram_notification("📰 Weekly AI/RSS summary", answer[:3800])
+
+async def scheduled_security_check() -> None:
+    await check_resource_pressure()
+
+async def telegram_scrape_callback(topic: str) -> dict[str, Any]:
+    result = await asyncio.to_thread(scrape_and_save, topic, "All Platforms", "append", "telegram_scrape")
+    await notify_scrape(result)
+    return result
+
 @app.on_event("startup")
-def startup() -> None:
+async def startup() -> None:
     global automation_scheduler
     app.state.started_at = datetime.now(timezone.utc).astimezone().isoformat()
     record_server_runtime()
-    automation_scheduler = AutomationScheduler(run_scheduled_scrape, run_scheduled_backup)
+    automation_scheduler = AutomationScheduler(run_scheduled_scrape, run_scheduled_backup, scheduled_rss_sync, scheduled_weekly_report, scheduled_security_check)
+    configure_scrape_callback(telegram_scrape_callback)
+    await initialize_telegram_bot()
     automation_scheduler.start()
 
 @app.on_event("shutdown")
-def shutdown() -> None:
+async def shutdown() -> None:
     if automation_scheduler:
         automation_scheduler.shutdown()
+    await shutdown_telegram_bot()
 
 
 app.add_middleware(
@@ -301,10 +328,66 @@ async def chat(payload: ChatRequest) -> dict[str, Any]:
     context = ""
     if payload.include_logs:
         context = json.dumps(read_logs(100), ensure_ascii=False, default=str)
+    rag_context = await asyncio.to_thread(context_for, payload.message, 6)
+    context = (context + "\n\nLOCAL RAG CONTEXT:\n" + rag_context) if context else rag_context
     answer = await asyncio.to_thread(chat_with_gemini, payload.message, context)
     await notify_ai(payload.message, answer)
     return {"answer": answer}
 
+
+
+@app.get("/api/rag/search")
+def rag_endpoint(q: str, top_k: int = 6, rebuild: bool = False):
+    return {"results": rag_search(q, top_k=top_k, rebuild=rebuild)}
+
+@app.post("/api/rag/rebuild")
+def rag_rebuild():
+    return {"ok": True, **rebuild_index()}
+
+@app.post("/api/agents/workflow")
+async def agents_workflow(payload: ChatRequest):
+    context = await asyncio.to_thread(context_for, payload.message, 8)
+    result = await asyncio.to_thread(run_multi_agent_workflow, payload.message, context)
+    return {"ok": True, "workflow": result}
+
+@app.get("/api/rss")
+def rss(limit: int = 20):
+    return {"items": recent_items(limit)}
+
+@app.post("/api/rss/sync")
+async def rss_sync():
+    result = await asyncio.to_thread(sync_feeds)
+    return {"ok": True, **result}
+
+@app.get("/api/security")
+async def security():
+    return await check_resource_pressure()
+
+@app.post("/api/webhooks/trigger")
+async def event_trigger(request: Request):
+    import hmac
+    secret = os.getenv("WEBHOOK_SECRET", "").strip()
+    provided = request.headers.get("X-Webhook-Secret", "")
+    if secret and not hmac.compare_digest(provided, secret):
+        await alert_unauthorized("/api/webhooks/trigger", "Invalid webhook secret")
+        raise HTTPException(status_code=401, detail="Invalid webhook secret.")
+    payload = await request.json()
+    message = str(payload.get("message") or payload.get("prompt") or "").strip()
+    if not message:
+        raise HTTPException(status_code=400, detail="message or prompt is required.")
+    context = await asyncio.to_thread(context_for, message, 6)
+    answer = await asyncio.to_thread(chat_with_gemini, message, context)
+    await notify_ai(message, answer)
+    return {"ok": True, "answer": answer}
+
+@app.post("/api/telegram/webhook")
+async def telegram_webhook(request: Request):
+    import hmac
+    secret = os.getenv("TELEGRAM_WEBHOOK_SECRET", "").strip()
+    provided = request.headers.get("X-Telegram-Bot-Api-Secret-Token", "")
+    if secret and not hmac.compare_digest(provided, secret):
+        raise HTTPException(status_code=401, detail="Invalid Telegram webhook secret.")
+    return await handle_webhook(request)
 
 @app.get("/api/excel")
 def excel_files() -> dict[str, Any]:
