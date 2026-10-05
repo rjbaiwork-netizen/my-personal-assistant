@@ -22,9 +22,9 @@
       <div class="panel stat"><span>Daily Usage</span><strong data-usage-percent>0%</strong></div>
     </section>
     <section class="panel p-6">
-      <h2 class="section-title">Daily usage</h2><p class="muted">Client-side active-session counter with an 8-hour reference target. It is not a cloud CPU quota meter.</p>
+      <h2 class="section-title">Daily usage</h2><p class="muted">Server-side runtime counter persisted in the configured storage volume. It uses an 8-hour daily reference target; it is not a provider billing/quota meter.</p>
       <div class="progress mt-5"><div data-usage-bar class="progress-fill" style="width:0%"></div></div>
-      <div class="flex justify-between text-xs muted mt-2"><span data-usage-time>00:00:00</span><span>08:00:00</span></div>
+      <div class="flex justify-between text-xs muted mt-2"><span data-usage-time>00:00:00</span><span>08:00:00</span></div><p id="serverUsageMeta" class="muted text-xs mt-3">Loading server runtime…</p>
     </section>
     <section class="grid lg:grid-cols-2 gap-4">
       <div class="panel p-6"><h2 class="section-title">System status</h2><p id="statusMessage" class="muted mt-2">Loading…</p></div>
