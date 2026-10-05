@@ -3,5 +3,16 @@
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Logs | My Personal Assistant</title><script src="https://cdn.tailwindcss.com"></script><link rel="stylesheet" href="/styles.css"></head>
 <body><header class="site-header"><div class="shell header-inner"><a class="brand" href="/index.html"><span data-brand-logo>🤖</span><span data-brand-name>My Personal Assistant</span></a><div class="header-meta">Today <span data-usage-time>00:00:00</span> / 08:00:00</div></div></header>
-<div class="shell page-grid"><div data-navigation></div><main class="space-y-6"><section class="flex flex-wrap justify-between gap-3 items-end"><div><p class="eyebrow">History</p><h1 class="page-title">Data Logs</h1><p class="muted">Every Excel record is rendered as an individual chat-style message bubble.</p></div><button id="refreshLogs" class="secondary">Refresh</button></section>
-<section id="logList" class="space-y-4"></section></main></div><script src="/app.js"></script><script>window.MPA_PAGE="logs";</script></body></html>
+<div class="shell page-grid"><div data-navigation></div><main class="space-y-6">
+<section class="flex flex-wrap justify-between gap-3 items-end"><div><p class="eyebrow">History</p><h1 class="page-title">Data Logs</h1><p class="muted">Search and filter Excel records server-side, including large collections.</p></div><button id="refreshLogs" class="secondary">Refresh</button></section>
+<section class="panel p-4">
+<div class="grid md:grid-cols-4 gap-3">
+<label class="md:col-span-2">Search<input id="logSearch" class="input mt-1" placeholder="Search topic, platform, file or message…" autocomplete="off"></label>
+<label>Platform<select id="logPlatform" class="input mt-1"><option value="">All platforms</option><option>Google</option><option>Bing</option><option>DuckDuckGo</option></select></label>
+<label>From date<input id="logDateFrom" type="date" class="input mt-1"></label>
+<label>To date<input id="logDateTo" type="date" class="input mt-1"></label>
+</div>
+<div class="flex flex-wrap items-center justify-between gap-3 mt-4"><span id="logSummary" class="muted text-sm">Loading…</span><div class="flex gap-2"><button id="logPrev" class="secondary" disabled>Previous</button><button id="logNext" class="secondary" disabled>Next</button></div></div>
+</section>
+<section id="logList" class="space-y-4"></section>
+</main></div><script src="/app.js"></script><script>window.MPA_PAGE="logs";</script></body></html>
