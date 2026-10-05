@@ -23,7 +23,7 @@ from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, Tabl
 
 from .ai_assistant import chat_with_gemini
 from .scraper import COLUMNS, EXCEL_DIR, list_excel_files, read_logs, scrape_and_save, search_logs
-from .backup_rotation import backup_status, create_rotated_backup, upload_to_s3
+from .backup_rotation import backup_status, create_rotated_backup, upload_to_s3, sync_excel_to_s3, cleanup_remote_backups
 from .scheduler import AutomationScheduler
 from .telegram_notifier import notify_ai, notify_backup, notify_scrape, telegram_configured, send_telegram_notification
 from .rag_store import context_for, rebuild_index, search as rag_search
