@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import re
 from datetime import datetime, timezone
 from pathlib import Path
@@ -10,7 +11,8 @@ import pandas as pd
 import requests
 
 BASE_DIR = Path(__file__).resolve().parent.parent
-EXCEL_DIR = BASE_DIR / "storage" / "excel_files"
+STORAGE_DIR = Path(os.getenv("STORAGE_DIR", str(BASE_DIR / "storage"))).resolve()
+EXCEL_DIR = STORAGE_DIR / "excel_files"
 EXCEL_DIR.mkdir(parents=True, exist_ok=True)
 
 COLUMNS = ["Date", "Time", "File Name", "Prompt/Topic", "Platform", "Message Bubble"]
@@ -44,10 +46,10 @@ def _fetch_preview(platform: str, topic: str) -> str:
         url = url_template.format(query=quote_plus(topic))
         response = requests.get(
             url,
-            timeout=8,
+            timeout=10,
             headers={
                 "User-Agent": (
-                    "Mozilla/5.0 (compatible; MyPersonalAssistant/2.0; "
+                    "Mozilla/5.0 (compatible; MyPersonalAssistant/3.0; "
                     "+https://github.com/rjbaiwork-netizen/my-personal-assistant)"
                 )
             },
@@ -63,12 +65,10 @@ def scrape_and_save(topic: str, platform: str, storage_mode: str, file_name: str
     topic = (topic or "").strip()
     platform = (platform or "All Platforms").strip()
     storage_mode = (storage_mode or "append").lower().strip()
-
     if not topic:
         raise ValueError("Topic / Keywords is required.")
     if storage_mode not in {"append", "new"}:
         raise ValueError("storage_mode must be 'append' or 'new'.")
-
     platforms = list(PLATFORMS) if platform == "All Platforms" else [platform]
     unknown = [p for p in platforms if p not in PLATFORMS]
     if unknown:
@@ -96,16 +96,14 @@ def scrape_and_save(topic: str, platform: str, storage_mode: str, file_name: str
                 if column not in existing.columns:
                     existing[column] = ""
             existing = existing[COLUMNS]
-            frame = pd.concat(
-                [existing, pd.DataFrame(rows, columns=COLUMNS)],
-                ignore_index=True,
-            )
+            frame = pd.concat([existing, pd.DataFrame(rows, columns=COLUMNS)], ignore_index=True)
         else:
             frame = pd.DataFrame(rows, columns=COLUMNS)
     else:
         path = _unique_path(stem)
         frame = pd.DataFrame(rows, columns=COLUMNS)
 
+    EXCEL_DIR.mkdir(parents=True, exist_ok=True)
     frame.to_excel(path, index=False, engine="openpyxl")
     return {
         "file_name": path.name,
@@ -118,17 +116,19 @@ def scrape_and_save(topic: str, platform: str, storage_mode: str, file_name: str
 
 
 def list_excel_files() -> list[dict[str, Any]]:
+    EXCEL_DIR.mkdir(parents=True, exist_ok=True)
     result = []
     for path in sorted(EXCEL_DIR.glob("*.xlsx"), key=lambda p: p.stat().st_mtime, reverse=True):
         result.append({
             "file_name": path.name,
             "size_bytes": path.stat().st_size,
-            "modified": datetime.fromtimestamp(path.stat().st_mtime).isoformat(),
+            "modified": datetime.fromtimestamp(path.stat().st_mtime).astimezone().isoformat(),
         })
     return result
 
 
 def read_logs(limit: int = 100) -> list[dict[str, Any]]:
+    EXCEL_DIR.mkdir(parents=True, exist_ok=True)
     rows: list[dict[str, Any]] = []
     for path in sorted(EXCEL_DIR.glob("*.xlsx"), key=lambda p: p.stat().st_mtime, reverse=True):
         try:
