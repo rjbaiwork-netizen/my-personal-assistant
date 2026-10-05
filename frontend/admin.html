@@ -9,5 +9,8 @@
 <label>Gemini API key<input id="geminiKey" type="password" class="input mt-1" maxlength="500" placeholder="Enter a new key or leave unchanged"></label>
 <label>Gemini model<input id="geminiModel" class="input mt-1" maxlength="100"></label>
 <label>Default Excel storage mode<select id="defaultMode" class="input mt-1"><option value="append">Append</option><option value="new">New file</option></select></label>
-<div class="flex items-center gap-3"><button class="primary">Save Settings</button><span id="settingsMessage" class="muted text-sm"></span></div></form></section></main></div>
+<div class="flex items-center gap-3"><button class="primary">Save Settings</button><span id="settingsMessage" class="muted text-sm"></span></div></form></section>
+<section class="panel p-6 max-w-3xl mt-6"><p class="eyebrow">Automation</p><h2 class="section-title">Background Services</h2>
+<div class="grid md:grid-cols-3 gap-3 mt-4"><div class="notice"><span class="muted text-xs">Scheduler</span><strong id="automationScheduler" class="block mt-1">Checking…</strong></div><div class="notice"><span class="muted text-xs">Telegram</span><strong id="automationTelegram" class="block mt-1">Checking…</strong></div><div class="notice"><span class="muted text-xs">Backups</span><strong id="automationBackup" class="block mt-1">Checking…</strong></div></div>
+<p id="automationJobs" class="muted text-sm mt-4"></p></section></main></div>
 <script src="/app.js"></script><script>window.MPA_PAGE="admin";</script></body></html>
