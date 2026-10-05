@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import shutil
@@ -21,7 +22,10 @@ from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
 from .ai_assistant import chat_with_gemini
-from .scraper import COLUMNS, EXCEL_DIR, list_excel_files, read_logs, scrape_and_save
+from .scraper import COLUMNS, EXCEL_DIR, list_excel_files, read_logs, scrape_and_save, search_logs
+from .backup_rotation import backup_status, create_rotated_backup, upload_to_s3
+from .scheduler import AutomationScheduler
+from .telegram_notifier import notify_ai, notify_backup, notify_scrape, telegram_configured
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 STORAGE_DIR = Path(os.getenv("STORAGE_DIR", str(BASE_DIR / "storage"))).resolve()
@@ -133,13 +137,21 @@ class SettingsRequest(BaseModel):
     default_storage_mode: str = "append"
 
 
-app = FastAPI(title="My Personal Assistant API", version="3.0.0")
-
+app = FastAPI(title="My Personal Assistant API", version="3.1.0")
+automation_scheduler: AutomationScheduler | None = None
 
 @app.on_event("startup")
 def startup() -> None:
+    global automation_scheduler
     app.state.started_at = datetime.now(timezone.utc).astimezone().isoformat()
     record_server_runtime()
+    automation_scheduler = AutomationScheduler(run_scheduled_scrape, run_scheduled_backup)
+    automation_scheduler.start()
+
+@app.on_event("shutdown")
+def shutdown() -> None:
+    if automation_scheduler:
+        automation_scheduler.shutdown()
 
 
 app.add_middleware(
@@ -183,7 +195,7 @@ def health() -> dict[str, Any]:
     return {
         "status": "online" if storage_writable else "degraded",
         "service": "my-personal-assistant",
-        "version": "3.0.0",
+        "version": "3.1.0",
         "storage_dir": str(STORAGE_DIR),
         "storage_writable": storage_writable,
         "storage_error": storage_error,
@@ -198,6 +210,38 @@ def health() -> dict[str, Any]:
 @app.get("/api/usage")
 def usage() -> dict[str, Any]:
     return record_server_runtime()
+
+@app.get("/api/automation")
+def automation() -> dict[str, Any]:
+    return {
+        "scheduler": automation_scheduler.status() if automation_scheduler else {"enabled": False, "jobs": []},
+        "telegram": {"configured": telegram_configured()},
+        "backup": backup_status(),
+    }
+
+async def run_scheduled_scrape() -> None:
+    topic = os.getenv("SCRAPE_TOPIC", "").strip()
+    if not topic:
+        return
+    result = await asyncio.to_thread(
+        scrape_and_save,
+        topic=topic,
+        platform=os.getenv("SCRAPE_PLATFORM", "All Platforms"),
+        storage_mode=os.getenv("SCRAPE_STORAGE_MODE", "append"),
+        file_name=os.getenv("SCRAPE_FILE_NAME", "scheduled_scrape"),
+    )
+    await notify_scrape(result)
+
+async def run_scheduled_backup() -> None:
+    path = await asyncio.to_thread(create_rotated_backup)
+    destination = "local"
+    try:
+        remote = await asyncio.to_thread(upload_to_s3, path)
+        if remote:
+            destination = remote
+    except Exception:
+        destination = "local (remote upload failed)"
+    await notify_backup(path.name, destination)
 
 
 @app.get("/api/settings")
@@ -220,9 +264,11 @@ def update_settings(payload: SettingsRequest) -> dict[str, Any]:
 
 
 @app.post("/api/scrape")
-def trigger_scrape(payload: ScrapeRequest) -> dict[str, Any]:
+async def trigger_scrape(payload: ScrapeRequest) -> dict[str, Any]:
     try:
-        return {"ok": True, **scrape_and_save(**payload.model_dump())}
+        result = await asyncio.to_thread(scrape_and_save, **payload.model_dump())
+        await notify_scrape(result)
+        return {"ok": True, **result}
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -231,13 +277,33 @@ def trigger_scrape(payload: ScrapeRequest) -> dict[str, Any]:
 def logs(limit: int = 100) -> dict[str, Any]:
     return {"records": read_logs(max(1, min(limit, 500)))}
 
+@app.get("/api/logs/search")
+def logs_search(
+    q: str = "",
+    platform: str = "",
+    date_from: str = "",
+    date_to: str = "",
+    limit: int = 100,
+    offset: int = 0,
+) -> dict[str, Any]:
+    return search_logs(
+        query=q,
+        platform=platform,
+        date_from=date_from,
+        date_to=date_to,
+        limit=max(1, min(limit, 500)),
+        offset=max(0, offset),
+    )
+
 
 @app.post("/api/chat")
-def chat(payload: ChatRequest) -> dict[str, Any]:
+async def chat(payload: ChatRequest) -> dict[str, Any]:
     context = ""
     if payload.include_logs:
         context = json.dumps(read_logs(100), ensure_ascii=False, default=str)
-    return {"answer": chat_with_gemini(payload.message, context)}
+    answer = await asyncio.to_thread(chat_with_gemini, payload.message, context)
+    await notify_ai(payload.message, answer)
+    return {"answer": answer}
 
 
 @app.get("/api/excel")
@@ -381,9 +447,17 @@ def create_backup() -> Path:
 
 
 @app.post("/api/backup")
-def backup():
+async def backup():
     try:
-        path = create_backup()
+        path = await asyncio.to_thread(create_rotated_backup)
+        destination = "local"
+        try:
+            remote = await asyncio.to_thread(upload_to_s3, path)
+            if remote:
+                destination = remote
+        except Exception:
+            destination = "local (remote upload failed)"
+        await notify_backup(path.name, destination)
         return FileResponse(path, filename=path.name, media_type="application/zip")
     except OSError as exc:
         raise HTTPException(status_code=500, detail=f"Backup failed: {exc}") from exc
