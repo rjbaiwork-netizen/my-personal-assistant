@@ -1,116 +1,20 @@
-const $ = (id) => document.getElementById(id);
-const api = (path, options={}) => fetch(path, {headers: {"Content-Type":"application/json", ...(options.headers||{})}, ...options});
-
-let config = {};
-let activeSeconds = 0;
-
-function todayKey(){ return new Date().toISOString().slice(0,10); }
-function loadUsage(){
-  const raw = localStorage.getItem("mpa_usage");
-  const data = raw ? JSON.parse(raw) : {};
-  if(data.date !== todayKey()){ activeSeconds = 0; localStorage.setItem("mpa_usage", JSON.stringify({date:todayKey(), seconds:0})); }
-  else activeSeconds = Number(data.seconds||0);
-}
-function saveUsage(){ localStorage.setItem("mpa_usage", JSON.stringify({date:todayKey(), seconds:activeSeconds})); }
-function formatTime(s){ return new Date(s*1000).toISOString().slice(11,19); }
-function updateUsage(){
-  activeSeconds += 1; saveUsage();
-  const pct = Math.min(100, activeSeconds/(8*3600)*100);
-  $("usageTimer").textContent = formatTime(activeSeconds);
-  $("usagePercent").textContent = Math.round(pct) + "%";
-  $("usageBar").style.width = pct + "%";
-}
-
-async function health(){
-  try{
-    const r = await api("/api/health"); const d = await r.json();
-    $("serverStatus").textContent = d.status; $("dashServer").textContent = "Online"; $("statusMessage").textContent = "API is responding normally.";
-  }catch(e){
-    $("serverStatus").textContent = "offline"; $("dashServer").textContent = "Offline"; $("statusMessage").textContent = "Could not reach the API.";
-  }
-}
-async function loadSettings(){
-  const r = await api("/api/settings"); config = await r.json();
-  $("brandName").textContent = config.platform_name || "My Personal Assistant";
-  $("brandLogo").textContent = config.logo || "🤖";
-  $("platformName").value = config.platform_name || "";
-  $("logo").value = config.logo || "";
-  $("geminiKey").value = config.gemini_api_key || "";
-  $("geminiModel").value = config.gemini_model || "gemini-2.5-flash";
-  $("defaultMode").value = config.default_storage_mode || "append";
-  $("storageMode").value = config.default_storage_mode || "append";
-  $("dashMode").textContent = (config.default_storage_mode || "append") === "append" ? "Append" : "New";
-}
-async function loadFiles(){
-  const r = await api("/api/excel"); const d = await r.json();
-  $("fileCount").textContent = d.files.length;
-  $("excelList").innerHTML = d.files.length ? d.files.map(f =>
-    `<div class="panel p-4 flex items-center justify-between gap-3"><div><div class="font-semibold">${escapeHtml(f.file_name)}</div><div class="text-xs text-slate-400">${Math.round(f.size_bytes/1024)} KB · ${new Date(f.modified).toLocaleString()}</div></div><a class="secondary" href="/api/download-excel/${encodeURIComponent(f.file_name)}">Download</a></div>`
-  ).join("") : '<div class="panel p-5 text-slate-400">No Excel files yet.</div>';
-}
-async function loadLogs(){
-  const r = await api("/api/logs?limit=200"); const d = await r.json();
-  $("logList").innerHTML = d.records.length ? d.records.map(x =>
-    `<div class="panel log-card p-4"><div class="meta">${escapeHtml(x.Date)} · ${escapeHtml(x.Time)} · ${escapeHtml(x["File Name"])} · ${escapeHtml(x.Platform)}</div><div class="font-medium">${escapeHtml(x["Prompt/Topic"])}</div><div class="text-sm text-slate-400 mt-1">${escapeHtml(x["Message Bubble"])}</div></div>`
-  ).join("") : '<div class="panel p-5 text-slate-400">No records yet. Run your first scrape.</div>';
-}
-function escapeHtml(v){return String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[c]));}
-
-document.querySelectorAll(".nav-btn").forEach(btn => btn.addEventListener("click", () => {
-  document.querySelectorAll(".nav-btn").forEach(b=>b.classList.remove("active")); btn.classList.add("active");
-  document.querySelectorAll(".tab").forEach(s=>s.classList.add("hidden")); $(btn.dataset.tab).classList.remove("hidden");
-  if(btn.dataset.tab==="logs") loadLogs();
-  if(btn.dataset.tab==="backup") loadFiles();
-}));
-
-$("openScraper").onclick=()=> $("scrapeModal").classList.remove("hidden");
-$("closeScraper").onclick=()=> $("scrapeModal").classList.add("hidden");
-$("scrapeModal").onclick=e=>{if(e.target===$("scrapeModal")) $("scrapeModal").classList.add("hidden")};
-$("refreshLogs").onclick=loadLogs;
-
-$("scrapeForm").onsubmit=async e=>{
-  e.preventDefault();
-  const r=await api("/api/scrape",{method:"POST",body:JSON.stringify({
-    topic:$("topic").value,platform:$("platform").value,storage_mode:$("storageMode").value,file_name:$("fileName").value
-  })});
-  const d=await r.json();
-  $("scrapeModal").classList.add("hidden"); $("scrapeResult").classList.remove("hidden");
-  $("scrapeResult").textContent = r.ok ? `Saved ${d.rows_added} records to ${d.file_name} (total ${d.total_rows}).` : (d.detail||"Scrape failed.");
-  await loadFiles(); await loadLogs();
-};
-
-$("settingsForm").onsubmit=async e=>{
-  e.preventDefault();
-  const r=await api("/api/settings",{method:"POST",body:JSON.stringify({
-    platform_name:$("platformName").value,logo:$("logo").value,gemini_api_key:$("geminiKey").value,
-    gemini_model:$("geminiModel").value,default_storage_mode:$("defaultMode").value
-  })});
-  const d=await r.json(); $("settingsMessage").textContent=r.ok?"Saved.":"Save failed: "+(d.detail||"unknown error");
-  if(r.ok) await loadSettings();
-};
-
-function addBubble(text,type){
-  const el=document.createElement("div"); el.className="bubble "+type;
-  el.innerHTML=escapeHtml(text).replace(/\n/g,"<br>"); $("chatMessages").appendChild(el);
-  $("chatMessages").scrollTop=$("chatMessages").scrollHeight;
-}
-$("chatForm").onsubmit=async e=>{
-  e.preventDefault(); const input=$("chatInput"); const msg=input.value.trim(); if(!msg)return;
-  addBubble(msg,"user"); input.value="";
-  addBubble("Thinking…","ai");
-  const last=$("chatMessages").lastElementChild;
-  try{
-    const r=await api("/api/chat",{method:"POST",body:JSON.stringify({message:msg,include_logs:true})});
-    const d=await r.json(); last.remove(); addBubble(d.answer||"No response.","ai");
-  }catch(err){last.remove();addBubble("Request failed.","ai")}
-};
-
-$("backupBtn").onclick=async()=>{
-  $("backupBtn").disabled=true; $("backupBtn").textContent="Creating…";
-  try{
-    const r=await api("/api/backup",{method:"POST"}); const blob=await r.blob();
-    const url=URL.createObjectURL(blob); const a=document.createElement("a"); a.href=url; a.download="system_backup.zip"; a.click(); URL.revokeObjectURL(url);
-  }finally{$("backupBtn").disabled=false;$("backupBtn").textContent="Create & Download ZIP Backup";}
-};
-
-loadUsage(); loadSettings(); health(); loadFiles(); loadLogs(); setInterval(updateUsage,1000); setInterval(health,30000);
+const api=(path,options={})=>fetch(path,{...options,headers:{"Content-Type":"application/json",...(options.headers||{})}});
+const $=id=>document.getElementById(id);
+const esc=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#039;"}[c]));
+function todayKey(){return new Date().toISOString().slice(0,10)}
+function formatTime(s){return new Date(s*1000).toISOString().slice(11,19)}
+let activeSeconds=0;
+function loadUsage(){try{const d=JSON.parse(localStorage.getItem("mpa_usage")||"{}");activeSeconds=d.date===todayKey()?Number(d.seconds||0):0}catch{activeSeconds=0}}
+function saveUsage(){localStorage.setItem("mpa_usage",JSON.stringify({date:todayKey(),seconds:activeSeconds}))}
+function updateUsage(){activeSeconds++;saveUsage();const pct=Math.min(100,activeSeconds/28800*100);document.querySelectorAll("[data-usage-time]").forEach(e=>e.textContent=formatTime(activeSeconds));document.querySelectorAll("[data-usage-percent]").forEach(e=>e.textContent=Math.round(pct)+"%");document.querySelectorAll("[data-usage-bar]").forEach(e=>e.style.width=pct+"%")}
+async function loadSettings(){const r=await api("/api/settings");if(!r.ok)return;const c=await r.json();document.querySelectorAll("[data-brand-name]").forEach(e=>e.textContent=c.platform_name||"My Personal Assistant");document.querySelectorAll("[data-brand-logo]").forEach(e=>e.textContent=c.logo||"🤖");const favicon=document.querySelector("link[rel='icon']")||Object.assign(document.createElement("link"),{rel:"icon"});favicon.href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>"+encodeURIComponent(c.logo||"🤖")+"</text></svg>";if(!favicon.parentNode)document.head.appendChild(favicon);if($("platformName"))$("platformName").value=c.platform_name||"";if($("logo"))$("logo").value=c.logo||"";if($("geminiKey"))$("geminiKey").value="";if($("geminiModel"))$("geminiModel").value=c.gemini_model||"gemini-2.5-flash";if($("defaultMode"))$("defaultMode").value=c.default_storage_mode||"append";if($("dashMode"))$("dashMode").textContent=c.default_storage_mode==="new"?"New":"Append";if($("storageMode"))$("storageMode").value=c.default_storage_mode||"append"}
+async function health(){try{const r=await api("/api/health");const d=await r.json();if($("serverStatus"))$("serverStatus").textContent=d.status;if($("dashServer"))$("dashServer").textContent="Online";if($("statusMessage"))$("statusMessage").textContent="API is responding normally."}catch{if($("serverStatus"))$("serverStatus").textContent="offline";if($("dashServer"))$("dashServer").textContent="Offline";if($("statusMessage"))$("statusMessage").textContent="Could not reach the API."}}
+async function loadFiles(){const r=await api("/api/excel");if(!r.ok)return;const d=await r.json();if($("fileCount"))$("fileCount").textContent=d.files.length;if(!$("excelList"))return;$("excelList").innerHTML=d.files.length?d.files.map(f=>`<div class="panel p-4 flex flex-wrap items-center justify-between gap-3"><div><div class="font-semibold">${esc(f.file_name)}</div><div class="muted text-xs">${Math.max(1,Math.round(f.size_bytes/1024))} KB · ${new Date(f.modified).toLocaleString()}</div></div><a class="secondary inline-block" href="/api/download-excel/${encodeURIComponent(f.file_name)}">Download Excel</a></div>`).join(""):'<div class="panel p-5 muted">No Excel files yet.</div>'}
+async function loadLogs(){if(!$("logList"))return;const r=await api("/api/logs?limit=500");if(!r.ok)return;const d=await r.json();$("logList").innerHTML=d.records.length?d.records.map(x=>`<article class="bubble log-bubble"><div class="meta">${esc(x.Date)} · ${esc(x.Time)} · ${esc(x.Platform)}</div><div class="font-semibold">${esc(x["Prompt/Topic"])}</div><div class="muted text-sm mt-1">File: ${esc(x["File Name"])}</div><div class="text-sm mt-2">${esc(x["Message Bubble"])}</div></article>`).join(""):'<div class="panel p-6 muted">No records yet. Run your first scrape.</div>'}
+function initScraper(){$("openScraper").onclick=()=>$("scrapeModal").classList.remove("hidden");$("closeScraper").onclick=()=>$("scrapeModal").classList.add("hidden");$("scrapeModal").onclick=e=>{if(e.target===$("scrapeModal"))$("scrapeModal").classList.add("hidden")};$("scrapeForm").onsubmit=async e=>{e.preventDefault();const btn=e.submitter;btn.disabled=true;try{const r=await api("/api/scrape",{method:"POST",body:JSON.stringify({topic:$("topic").value,platform:$("platform").value,storage_mode:$("storageMode").value,file_name:$("fileName").value})});const d=await r.json();$("scrapeModal").classList.add("hidden");$("scrapeResult").classList.remove("hidden");$("scrapeResult").textContent=r.ok?`Saved ${d.rows_added} record(s) to ${d.file_name}; total rows: ${d.total_rows}.`:(d.detail||"Scrape failed.");}finally{btn.disabled=false}}}
+function initAdmin(){$("settingsForm").onsubmit=async e=>{e.preventDefault();const payload={platform_name:$("platformName").value,logo:$("logo").value,gemini_api_key:$("geminiKey").value,gemini_model:$("geminiModel").value,default_storage_mode:$("defaultMode").value};const r=await api("/api/settings",{method:"POST",body:JSON.stringify(payload)});const d=await r.json();$("settingsMessage").textContent=r.ok?"Saved successfully.":(d.detail||"Save failed.");if(r.ok){await loadSettings();$("settingsMessage").textContent="Saved successfully.";}}}
+function bubble(text,type){const el=document.createElement("div");el.className="bubble "+type;el.innerHTML=esc(text).replace(/\n/g,"<br>");$("chatMessages").appendChild(el);$("chatMessages").scrollTop=$("chatMessages").scrollHeight;return el}
+function initChat(){$("chatForm").onsubmit=async e=>{e.preventDefault();const input=$("chatInput"),msg=input.value.trim();if(!msg)return;input.value="";bubble(msg,"user");const pending=bubble("Thinking…","ai");try{const r=await api("/api/chat",{method:"POST",body:JSON.stringify({message:msg,include_logs:true})});const d=await r.json();pending.remove();bubble(r.ok?(d.answer||"No response."):(d.detail||"Chat request failed."),"ai")}catch{pending.remove();bubble("Request failed. Check the server.","ai")}}}
+function initBackup(){$("backupBtn").onclick=async()=>{const btn=$("backupBtn");btn.disabled=true;btn.textContent="Creating…";try{const r=await api("/api/backup",{method:"POST"});if(!r.ok)throw new Error("Backup failed");const blob=await r.blob(),url=URL.createObjectURL(blob),a=document.createElement("a");a.href=url;a.download="system_backup.zip";document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000)}catch(e){alert(e.message)}finally{btn.disabled=false;btn.textContent="Create ZIP Backup"}}}
+function navigation(){const items=[["index.html","📊","Dashboard"],["scraper.html","🔎","Scraper"],["logs.html","💬","Data Logs"],["chat.html","🧠","AI Chat"],["admin.html","⚙️","Admin Settings"],["backup.html","💾","Backups & Downloads"]];const current=location.pathname.split("/").pop()||"index.html";document.querySelectorAll("[data-navigation]").forEach(n=>n.innerHTML='<nav class="panel nav-panel">'+items.map(([href,icon,label])=>`<a class="nav-link ${current===href?"active":""}" href="/${href}"><span>${icon}</span><span>${label}</span></a>`).join("")+'</nav>')}
+loadUsage();navigation();loadSettings();health();if($("fileCount")||$("excelList"))loadFiles();if($("logList")){loadLogs();$("refreshLogs").onclick=loadLogs}if($("openScraper"))initScraper();if($("settingsForm"))initAdmin();if($("chatForm"))initChat();if($("backupBtn"))initBackup();if($("dashServer"))setInterval(health,30000);setInterval(updateUsage,1000);
