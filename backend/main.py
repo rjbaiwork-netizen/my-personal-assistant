@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import tempfile
-from datetime import datetime
+import time
+from datetime import datetime, timezone
 from io import BytesIO
 from pathlib import Path
 from typing import Any
@@ -22,13 +24,14 @@ from .ai_assistant import chat_with_gemini
 from .scraper import COLUMNS, EXCEL_DIR, list_excel_files, read_logs, scrape_and_save
 
 BASE_DIR = Path(__file__).resolve().parent.parent
-STORAGE_DIR = BASE_DIR / "storage"
+STORAGE_DIR = Path(os.getenv("STORAGE_DIR", str(BASE_DIR / "storage"))).resolve()
 CONFIG_PATH = STORAGE_DIR / "config.json"
 BACKUP_DIR = STORAGE_DIR / "backups"
 FRONTEND_DIR = BASE_DIR / "frontend"
-STORAGE_DIR.mkdir(exist_ok=True)
-EXCEL_DIR.mkdir(parents=True, exist_ok=True)
-BACKUP_DIR.mkdir(exist_ok=True)
+RUNTIME_PATH = STORAGE_DIR / "runtime.json"
+
+for directory in (STORAGE_DIR, EXCEL_DIR, BACKUP_DIR):
+    directory.mkdir(parents=True, exist_ok=True)
 
 DEFAULT_CONFIG = {
     "platform_name": "My Personal Assistant",
@@ -50,11 +53,64 @@ def load_config() -> dict[str, Any]:
 
 
 def save_config(config: dict[str, Any]) -> None:
-    STORAGE_DIR.mkdir(exist_ok=True)
-    CONFIG_PATH.write_text(
+    STORAGE_DIR.mkdir(parents=True, exist_ok=True)
+    temporary = CONFIG_PATH.with_suffix(".tmp")
+    temporary.write_text(
         json.dumps(config, indent=2, ensure_ascii=False),
         encoding="utf-8",
     )
+    temporary.replace(CONFIG_PATH)
+
+
+def _today() -> str:
+    return datetime.now(timezone.utc).astimezone().date().isoformat()
+
+
+def _load_runtime() -> dict[str, Any]:
+    default = {
+        "date": _today(),
+        "server_runtime_seconds": 0,
+        "last_tick": time.time(),
+    }
+    if not RUNTIME_PATH.exists():
+        return default
+    try:
+        data = json.loads(RUNTIME_PATH.read_text(encoding="utf-8"))
+        if data.get("date") != default["date"]:
+            return default
+        return {**default, **data}
+    except (OSError, json.JSONDecodeError, TypeError, ValueError):
+        return default
+
+
+def _save_runtime(data: dict[str, Any]) -> None:
+    temporary = RUNTIME_PATH.with_suffix(".tmp")
+    temporary.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    temporary.replace(RUNTIME_PATH)
+
+
+def record_server_runtime() -> dict[str, Any]:
+    now = time.time()
+    state = _load_runtime()
+    previous = float(state.get("last_tick", now))
+    delta = max(0.0, now - previous)
+    # Do not count a long sleep/restart gap as active runtime.
+    delta = min(delta, 120.0)
+    state["server_runtime_seconds"] = round(
+        float(state.get("server_runtime_seconds", 0)) + delta, 3
+    )
+    state["last_tick"] = now
+    _save_runtime(state)
+    seconds = int(state["server_runtime_seconds"])
+    limit = 8 * 60 * 60
+    return {
+        "date": state["date"],
+        "server_runtime_seconds": seconds,
+        "limit_seconds": limit,
+        "remaining_seconds": max(0, limit - seconds),
+        "percent": min(100, round(seconds / limit * 100, 2)),
+        "server_started_at": app.state.started_at,
+    }
 
 
 class ScrapeRequest(BaseModel):
@@ -77,7 +133,14 @@ class SettingsRequest(BaseModel):
     default_storage_mode: str = "append"
 
 
-app = FastAPI(title="My Personal Assistant API", version="2.0.0")
+app = FastAPI(title="My Personal Assistant API", version="3.0.0")
+
+
+@app.on_event("startup")
+def startup() -> None:
+    app.state.started_at = datetime.now(timezone.utc).astimezone().isoformat()
+    record_server_runtime()
+
 
 app.add_middleware(
     CORSMiddleware,
@@ -90,7 +153,17 @@ app.add_middleware(
 
 @app.get("/api/health")
 def health() -> dict[str, Any]:
-    return {"status": "online", "service": "my-personal-assistant", "version": "2.0.0"}
+    return {
+        "status": "online",
+        "service": "my-personal-assistant",
+        "version": "3.0.0",
+        "storage_dir": str(STORAGE_DIR),
+    }
+
+
+@app.get("/api/usage")
+def usage() -> dict[str, Any]:
+    return record_server_runtime()
 
 
 @app.get("/api/settings")
@@ -106,7 +179,7 @@ def update_settings(payload: SettingsRequest) -> dict[str, Any]:
         raise HTTPException(status_code=400, detail="default_storage_mode must be append or new.")
     current = load_config()
     incoming = payload.model_dump()
-    if incoming["gemini_api_key"] == "••••••••" or not incoming["gemini_api_key"].strip():
+    if incoming["gemini_api_key"] in {"••••••••", ""}:
         incoming["gemini_api_key"] = current.get("gemini_api_key", "")
     save_config(incoming)
     return {"ok": True, "settings": get_settings()}
@@ -165,10 +238,8 @@ def _load_pdf_frame(file_name: str | None = None) -> pd.DataFrame:
                 frames.append(pd.read_excel(path))
             except Exception:
                 continue
-
     if not frames:
         return pd.DataFrame(columns=COLUMNS)
-
     frame = pd.concat(frames, ignore_index=True)
     for column in COLUMNS:
         if column not in frame.columns:
@@ -210,7 +281,6 @@ def build_logs_pdf(file_name: str | None = None) -> BytesIO:
         ])
     if len(data) == 1:
         data.append([Paragraph("No records available.", styles["BodyText"])] + [""] * 5)
-
     table = Table(data, repeatRows=1, colWidths=[55, 55, 95, 130, 70, 280])
     table.setStyle(TableStyle([
         ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1e293b")),
@@ -240,7 +310,7 @@ def download_pdf(file_name: str | None = None):
 
 
 def create_backup() -> Path:
-    BACKUP_DIR.mkdir(exist_ok=True)
+    BACKUP_DIR.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     archive_base = BACKUP_DIR / f"system_backup_{stamp}"
     with tempfile.TemporaryDirectory() as tmp:
@@ -272,7 +342,6 @@ def create_backup() -> Path:
                 shutil.copytree(item, destination)
             else:
                 shutil.copy2(item, destination)
-
         archive = shutil.make_archive(str(archive_base), "zip", root_dir=tmp, base_dir=root.name)
     return Path(archive)
 
@@ -301,4 +370,4 @@ def frontend(path: str):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("backend.main:app", host="0.0.0.0", port=10000)
+    uvicorn.run("backend.main:app", host="0.0.0.0", port=int(os.getenv("PORT", "7860")))
