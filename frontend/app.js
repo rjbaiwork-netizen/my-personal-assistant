@@ -60,5 +60,16 @@ function initAdmin(){$("settingsForm").onsubmit=async e=>{e.preventDefault();con
 function bubble(text,type){const el=document.createElement("div");el.className="bubble "+type;el.innerHTML=esc(text).replace(/\n/g,"<br>");$("chatMessages").appendChild(el);$("chatMessages").scrollTop=$("chatMessages").scrollHeight;return el}
 function initChat(){$("chatForm").onsubmit=async e=>{e.preventDefault();const input=$("chatInput"),msg=input.value.trim();if(!msg)return;input.value="";bubble(msg,"user");const pending=bubble("Thinking…","ai");try{const r=await api("/api/chat",{method:"POST",body:JSON.stringify({message:msg,include_logs:true})});const d=await r.json();pending.remove();bubble(r.ok?(d.answer||"No response."):(d.detail||"Chat request failed."),"ai")}catch{pending.remove();bubble("Request failed. Check the server.","ai")}}}
 function initBackup(){$("backupBtn").onclick=async()=>{const btn=$("backupBtn");btn.disabled=true;btn.textContent="Creating…";try{const r=await api("/api/backup",{method:"POST"});if(!r.ok)throw new Error("Backup failed");const blob=await r.blob(),url=URL.createObjectURL(blob),a=document.createElement("a");a.href=url;a.download="system_backup.zip";document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000)}catch(e){alert(e.message)}finally{btn.disabled=false;btn.textContent="Create ZIP Backup"}}}
+async function loadAutomation(){
+  if(!$("automationScheduler"))return;
+  try{
+    const r=await api("/api/automation",{notify:false});if(!r.ok)return;
+    const d=await r.json();
+    $("automationScheduler").textContent=d.scheduler.enabled?"Running":"Disabled";
+    $("automationTelegram").textContent=d.telegram.configured?"Configured":"Not configured";
+    $("automationBackup").textContent=d.backup.latest?d.backup.latest:"No backup yet";
+    $("automationJobs").textContent=(d.scheduler.jobs||[]).map(j=>j.id+" → "+(j.next_run||"not scheduled")).join(" · ")||"No scheduled jobs.";
+  }catch{}
+}
 function navigation(){const items=[["index.html","📊","Dashboard"],["scraper.html","🔎","Scraper"],["logs.html","💬","Data Logs"],["chat.html","🧠","AI Chat"],["admin.html","⚙️","Admin Settings"],["backup.html","💾","Backups & Downloads"]];const current=location.pathname.split("/").pop()||"index.html";document.querySelectorAll("[data-navigation]").forEach(n=>n.innerHTML='<nav class="panel nav-panel">'+items.map(([href,icon,label])=>`<a class="nav-link ${current===href?"active":""}" href="/${href}"><span>${icon}</span><span>${label}</span></a>`).join("")+'</nav>')}
-loadUsage();navigation();loadServerUsage();loadSettings();health();if($("fileCount")||$("excelList"))loadFiles();if($("logList"))initLogFilters()if($("openScraper"))initScraper();if($("settingsForm"))initAdmin();if($("chatForm"))initChat();if($("backupBtn"))initBackup();if($("dashServer"))setInterval(health,30000);setInterval(updateClientUsage,1000);setInterval(loadServerUsage,30000);
+loadUsage();navigation();loadServerUsage();loadSettings();health();if($("fileCount")||$("excelList"))loadFiles();if($("logList"))initLogFilters()if($("openScraper"))initScraper();if($("settingsForm"))initAdmin();loadAutomation();if($("chatForm"))initChat();if($("backupBtn"))initBackup();if($("dashServer"))setInterval(health,30000);setInterval(updateClientUsage,1000);setInterval(loadServerUsage,30000);
