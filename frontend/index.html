@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Single-user Personal AI and Data Scraper Platform">
+  <title>My Personal Assistant</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen">
+  <header class="border-b border-slate-800 bg-slate-950/95 sticky top-0 z-30">
+    <div class="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between gap-4">
+      <button id="brand" class="flex items-center gap-3 font-bold text-lg">
+        <span id="brandLogo" class="text-2xl">🤖</span><span id="brandName">My Personal Assistant</span>
+      </button>
+      <div class="text-right text-xs text-slate-400">
+        <div>Server <span id="serverStatus" class="status-dot">checking…</span></div>
+        <div>Today <span id="usageTimer">00:00:00</span> / 08:00:00</div>
+      </div>
+    </div>
+  </header>
+
+  <div class="max-w-7xl mx-auto px-4 py-6 grid lg:grid-cols-[220px_1fr] gap-6">
+    <nav class="panel p-2 h-fit lg:sticky lg:top-24">
+      <button class="nav-btn active" data-tab="dashboard">📊 Dashboard</button>
+      <button class="nav-btn" data-tab="scraper">🔎 Scraper</button>
+      <button class="nav-btn" data-tab="logs">💬 Data Logs</button>
+      <button class="nav-btn" data-tab="chat">🧠 AI Assistant</button>
+      <button class="nav-btn" data-tab="settings">⚙️ Admin & Settings</button>
+      <button class="nav-btn" data-tab="backup">💾 Backup & Downloads</button>
+    </nav>
+
+    <main>
+      <section id="dashboard" class="tab space-y-6">
+        <div>
+          <h1 class="text-3xl font-bold">Personal AI Command Center</h1>
+          <p class="text-slate-400 mt-1">Single-user scraping, Excel logging and Gemini-assisted analysis.</p>
+        </div>
+        <div class="grid sm:grid-cols-2 xl:grid-cols-4 gap-4">
+          <div class="panel p-5"><div class="label">Server</div><div id="dashServer" class="metric">Checking…</div></div>
+          <div class="panel p-5"><div class="label">Storage Mode</div><div id="dashMode" class="metric">Append</div></div>
+          <div class="panel p-5"><div class="label">Excel Files</div><div id="fileCount" class="metric">0</div></div>
+          <div class="panel p-5"><div class="label">Daily Usage</div><div id="usagePercent" class="metric">0%</div></div>
+        </div>
+        <div class="panel p-6">
+          <h2 class="text-xl font-semibold mb-2">System status</h2>
+          <div id="statusMessage" class="text-slate-400">Loading…</div>
+          <div class="progress mt-4"><div id="usageBar" class="progress-fill" style="width:0%"></div></div>
+        </div>
+      </section>
+
+      <section id="scraper" class="tab hidden space-y-6">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <div><h2 class="text-2xl font-bold">Scraper</h2><p class="text-slate-400">Collect public-page fetch diagnostics and persist structured logs.</p></div>
+          <button id="openScraper" class="primary">＋ New Scrape</button>
+        </div>
+        <div id="scrapeResult" class="panel p-5 hidden"></div>
+      </section>
+
+      <section id="logs" class="tab hidden space-y-4">
+        <div class="flex items-center justify-between"><div><h2 class="text-2xl font-bold">Message & Data Logs</h2><p class="text-slate-400">Newest records appear first.</p></div><button id="refreshLogs" class="secondary">Refresh</button></div>
+        <div id="logList" class="space-y-3"></div>
+      </section>
+
+      <section id="chat" class="tab hidden">
+        <div class="panel overflow-hidden">
+          <div class="p-5 border-b border-slate-800"><h2 class="text-2xl font-bold">AI Chat Assistant</h2><p class="text-slate-400">Ask Gemini to explain or analyze your stored logs.</p></div>
+          <div id="chatMessages" class="chat-area p-5 space-y-4"></div>
+          <form id="chatForm" class="p-4 border-t border-slate-800 flex gap-2">
+            <input id="chatInput" class="input flex-1" placeholder="Ask about your data…" autocomplete="off">
+            <button class="primary">Send</button>
+          </form>
+        </div>
+      </section>
+
+      <section id="settings" class="tab hidden">
+        <div class="panel p-6 max-w-2xl">
+          <h2 class="text-2xl font-bold">Admin & Settings</h2>
+          <p class="text-slate-400 mt-1 mb-6">Single-user local configuration. The API key is never returned in plaintext by the server.</p>
+          <form id="settingsForm" class="space-y-4">
+            <label>Platform name<input id="platformName" class="input mt-1" required></label>
+            <label>Logo / emoji<input id="logo" class="input mt-1"></label>
+            <label>Gemini API key<input id="geminiKey" type="password" class="input mt-1" placeholder="Enter a key or leave unchanged"></label>
+            <label>Gemini model<input id="geminiModel" class="input mt-1"></label>
+            <label>Default storage mode<select id="defaultMode" class="input mt-1"><option value="append">Append</option><option value="new">New Excel File</option></select></label>
+            <button class="primary">Save Settings</button>
+            <span id="settingsMessage" class="text-sm text-slate-400 ml-2"></span>
+          </form>
+        </div>
+      </section>
+
+      <section id="backup" class="tab hidden space-y-5">
+        <div><h2 class="text-2xl font-bold">Backup & Downloads</h2><p class="text-slate-400">Download individual Excel logs or a sanitized full-system backup.</p></div>
+        <div class="panel p-5"><button id="backupBtn" class="primary">Create & Download ZIP Backup</button></div>
+        <div id="excelList" class="space-y-2"></div>
+      </section>
+    </main>
+  </div>
+
+  <div id="scrapeModal" class="modal hidden">
+    <div class="modal-card">
+      <div class="flex justify-between items-center mb-5"><h3 class="text-xl font-bold">New Scrape</h3><button id="closeScraper" class="icon-btn">✕</button></div>
+      <form id="scrapeForm" class="space-y-4">
+        <label>Topic / Keywords<input id="topic" class="input mt-1" required maxlength="1000"></label>
+        <label>Platform<select id="platform" class="input mt-1"><option>All Platforms</option><option>Google</option><option>Bing</option><option>DuckDuckGo</option></select></label>
+        <label>Excel Storage Mode<select id="storageMode" class="input mt-1"><option value="append">Append to Existing File</option><option value="new">New Excel File</option></select></label>
+        <label>File name<input id="fileName" class="input mt-1" value="scrape_log"></label>
+        <button class="primary w-full">Run Scrape</button>
+      </form>
+    </div>
+  </div>
+
+  <script src="/app.js"></script>
+</body>
+</html>
