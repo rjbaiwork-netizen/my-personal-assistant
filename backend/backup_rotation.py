@@ -81,6 +81,39 @@ def _rotate_local_backups() -> None:
             pass
 
 
+def sync_excel_to_s3() -> list[str]:
+    bucket = os.getenv("BACKUP_S3_BUCKET", "").strip()
+    if not bucket:
+        return []
+    import boto3
+    prefix = os.getenv("BACKUP_S3_PREFIX", "my-personal-assistant").strip("/")
+    client = boto3.client("s3", region_name=os.getenv("AWS_REGION") or None, endpoint_url=os.getenv("BACKUP_S3_ENDPOINT") or None)
+    uploaded = []
+    excel_dir = STORAGE_DIR / "excel_files"
+    for path in excel_dir.glob("*.xlsx"):
+        key = f"{prefix}/excel/{path.name}" if prefix else f"excel/{path.name}"
+        client.upload_file(str(path), bucket, key, ExtraArgs={"ServerSideEncryption": "AES256"})
+        uploaded.append(f"s3://{bucket}/{key}")
+    return uploaded
+
+
+def cleanup_remote_backups() -> int:
+    bucket = os.getenv("BACKUP_S3_BUCKET", "").strip()
+    if not bucket:
+        return 0
+    import boto3
+    prefix = os.getenv("BACKUP_S3_PREFIX", "my-personal-assistant").strip("/") + "/"
+    client = boto3.client("s3", region_name=os.getenv("AWS_REGION") or None, endpoint_url=os.getenv("BACKUP_S3_ENDPOINT") or None)
+    response = client.list_objects_v2(Bucket=bucket, Prefix=prefix)
+    objects = [o for o in response.get("Contents", []) if "/excel/" not in o["Key"] and o["Key"].endswith(".zip")]
+    objects.sort(key=lambda o: o["LastModified"], reverse=True)
+    deleted = 0
+    for obj in objects[_retention_count():]:
+        client.delete_object(Bucket=bucket, Key=obj["Key"])
+        deleted += 1
+    return deleted
+
+
 def backup_status() -> dict:
     files = sorted(
         BACKUP_DIR.glob("system_backup_*.zip"),
