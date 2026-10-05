@@ -12,8 +12,8 @@ STORAGE_DIR = Path(os.getenv("STORAGE_DIR", str(BASE_DIR / "storage"))).resolve(
 CONFIG_PATH = STORAGE_DIR / "config.json"
 
 # Gemini's current fast general-purpose model. Environment configuration wins.
-DEFAULT_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.8-flash")
-MODEL_FALLBACKS = ("gemini-3.8-flash", "gemini-3.5-flash-lite")
+DEFAULT_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.7-flash")
+MODEL_FALLBACKS = ("gemini-3.7-flash", "gemini-3.5-flash-lite")
 
 
 def _load_config() -> dict[str, Any]:
