@@ -8,6 +8,8 @@
 <label>Platform icon / logo<input id="logo" class="input mt-1" maxlength="20" placeholder="🤖"></label>
 <label>Gemini API key<input id="geminiKey" type="password" class="input mt-1" maxlength="500" placeholder="Enter a new key or leave unchanged"></label>
 <label>Gemini model<input id="geminiModel" class="input mt-1" maxlength="100"></label>
+<label>Scrape interval (minutes)<input id="scrapeInterval" type="number" min="1" max="10080" class="input mt-1" value="60"></label>
+<label>Admin configuration secret<input id="adminConfigSecret" type="password" class="input mt-1" placeholder="Required when ADMIN_CONFIG_SECRET is enabled"></label>
 <label>Default Excel storage mode<select id="defaultMode" class="input mt-1"><option value="append">Append</option><option value="new">New file</option></select></label>
 <div class="flex items-center gap-3"><button class="primary">Save Settings</button><span id="settingsMessage" class="muted text-sm"></span></div></form></section>
 <section class="panel p-6 max-w-3xl mt-6"><p class="eyebrow">Automation</p><h2 class="section-title">Background Services</h2>
