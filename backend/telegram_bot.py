@@ -57,7 +57,7 @@ async def _setkey(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not context.args:
         await update.message.reply_text("Usage: /setkey <Gemini API key>"); return
     _apply({"gemini_api_key": context.args[0].strip()})
-    log_activity(source="telegram", actor=actor, action="setmodel_key", command=command, output="Gemini API key updated")
+    log_activity(source="telegram", actor=actor, action="setkey", command=command, output="Gemini API key updated")
     await update.message.reply_text("✅ Gemini API key updated and active immediately.")
 
 async def _setmodel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -98,13 +98,18 @@ async def _reload(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text("♻️ Runtime configuration reloaded.\n" + str(result["scheduler"]))
 
 async def _status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    if not _authorized(update): return
+    command = _command(update); actor = _actor(update)
+    if not _authorized(update):
+        log_activity(source="telegram", actor=actor, action="unauthorized", command=command, status="error", output="Unauthorized command")
+        return
     metrics = system_metrics()
-    await update.message.reply_text(
+    summary = (
         "🤖 My Personal Assistant\n"
         f"CPU {metrics['cpu_percent']}% · RAM {metrics['memory_percent']}% · Disk {metrics['disk_percent']}%\n"
         f"Telegram configured: {telegram_configured()}"
     )
+    log_activity(source="telegram", actor=actor, action="status", command=command, output=summary)
+    await update.message.reply_text(summary)
 
 
 async def _scrape(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -137,6 +142,8 @@ async def _backup(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 
 async def _start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    actor = _actor(update); command = _command(update)
+    log_activity(source="telegram", actor=actor, action="start", command=command, output="Bot help displayed")
     await update.message.reply_text(
         "My Personal Assistant bot is ready.\n"
         "/scrape <topic> — run a scrape\n/status — system status\n/backup — create a backup\n/setkey <key> — update Gemini key\n/setmodel <model> — change model\n/setinterval <minutes> — change scrape interval\n/reload — reload runtime"
