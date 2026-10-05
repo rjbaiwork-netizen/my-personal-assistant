@@ -324,15 +324,19 @@ def get_settings() -> dict[str, Any]:
 
 
 @app.post("/api/settings")
-def update_settings(payload: SettingsRequest) -> dict[str, Any]:
+def update_settings(payload: SettingsRequest, request: Request) -> dict[str, Any]:
+    expected = os.getenv("ADMIN_CONFIG_SECRET", "").strip()
+    supplied = request.headers.get("X-Admin-Config-Secret", "")
+    if expected and supplied != expected:
+        raise HTTPException(status_code=401, detail="Admin configuration authentication failed.")
     if payload.default_storage_mode not in {"append", "new"}:
         raise HTTPException(status_code=400, detail="default_storage_mode must be append or new.")
     current = load_config()
     incoming = payload.model_dump()
     if incoming["gemini_api_key"] in {"••••••••", ""}:
         incoming["gemini_api_key"] = current.get("gemini_api_key", "")
-    save_config(incoming)
-    return {"ok": True, "settings": get_settings()}
+    config = apply_runtime_config(incoming)
+    return {"ok": True, "settings": public_config(config)}
 
 
 @app.post("/api/scrape")
