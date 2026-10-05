@@ -1,0 +1,10 @@
+__pycache__/
+*.py[cod]
+.venv/
+.env
+.env.*
+!.env.example
+storage/excel_files/*.xlsx
+storage/backups/*.zip
+storage/runtime.json
+storage/config.local.json
