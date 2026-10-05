@@ -279,6 +279,7 @@ async def run_scheduled_scrape() -> None:
         file_name=os.getenv("SCRAPE_FILE_NAME", "scheduled_scrape"),
     )
     await notify_scrape(result)
+    log_activity(source="scheduler", actor="system", action="scrape", command="scheduled:scrape", output=result, metadata={"topic": topic})
 
 async def run_scheduled_backup() -> None:
     path = await asyncio.to_thread(create_rotated_backup)
@@ -292,6 +293,7 @@ async def run_scheduled_backup() -> None:
     except Exception:
         destination = "local (remote upload failed)"
     await notify_backup(path.name, destination)
+    log_activity(source="scheduler", actor="system", action="backup", command="scheduled:backup", output={"file": path.name, "destination": destination})
 
 
 class AdminConfigRequest(BaseModel):
