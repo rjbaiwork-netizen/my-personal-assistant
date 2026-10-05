@@ -137,3 +137,54 @@ def read_logs(limit: int = 100) -> list[dict[str, Any]]:
         except Exception:
             continue
     return rows[-limit:][::-1]
+
+
+def search_logs(
+    query: str = "",
+    platform: str = "",
+    date_from: str = "",
+    date_to: str = "",
+    limit: int = 100,
+    offset: int = 0,
+) -> dict[str, Any]:
+    query = query.strip().lower()
+    platform = platform.strip().lower()
+    frames = []
+
+    for path in EXCEL_DIR.glob("*.xlsx"):
+        try:
+            frame = pd.read_excel(path).fillna("")
+            for column in COLUMNS:
+                if column not in frame.columns:
+                    frame[column] = ""
+            frame = frame[COLUMNS]
+            frames.append(frame)
+        except Exception:
+            continue
+
+    if not frames:
+        return {"records": [], "total": 0, "limit": limit, "offset": offset}
+
+    frame = pd.concat(frames, ignore_index=True).fillna("").astype(str)
+
+    if query:
+        haystack = frame[COLUMNS].agg(" ".join, axis=1).str.lower()
+        frame = frame[haystack.str.contains(query, regex=False, na=False)]
+
+    if platform:
+        frame = frame[frame["Platform"].str.lower() == platform]
+
+    if date_from:
+        frame = frame[frame["Date"] >= date_from]
+    if date_to:
+        frame = frame[frame["Date"] <= date_to]
+
+    frame = frame.iloc[::-1]
+    total = len(frame)
+    page = frame.iloc[max(0, offset):max(0, offset) + max(1, min(limit, 500))]
+    return {
+        "records": page.to_dict(orient="records"),
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+    }
