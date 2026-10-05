@@ -160,7 +160,8 @@ app = FastAPI(title="My Personal Assistant API", version="3.1.0")
 automation_scheduler: AutomationScheduler | None = None
 
 async def scheduled_rss_sync() -> None:
-    await asyncio.to_thread(sync_feeds)
+    result = await asyncio.to_thread(sync_feeds)
+    log_activity(source="scheduler", actor="system", action="rss_sync", command="scheduled:rss", output=result)
 
 async def scheduled_weekly_report() -> None:
     items = await asyncio.to_thread(recent_items, 20)
@@ -171,7 +172,8 @@ async def scheduled_weekly_report() -> None:
     await send_telegram_notification("📰 Weekly AI/RSS summary", answer[:3800])
 
 async def scheduled_security_check() -> None:
-    await check_resource_pressure()
+    result = await check_resource_pressure()
+    log_activity(source="scheduler", actor="system", action="security_check", command="scheduled:security", output=result)
 
 async def telegram_scrape_callback(topic: str) -> dict[str, Any]:
     result = await asyncio.to_thread(scrape_and_save, topic, "All Platforms", "append", "telegram_scrape")
@@ -187,6 +189,7 @@ async def startup() -> None:
     configure_scrape_callback(telegram_scrape_callback)
     await initialize_telegram_bot()
     automation_scheduler.start()
+    log_activity(source="system", actor="system", action="startup", command="startup", output={"scheduler": automation_scheduler.status(), "telegram": telegram_configured()})
 
 @app.on_event("shutdown")
 async def shutdown() -> None:
