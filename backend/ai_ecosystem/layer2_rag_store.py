@@ -63,7 +63,7 @@ def _write(path: Path, data: dict[str, Any]) -> None:
 
 
 def ensure_storage() -> None:
-    for name in ("network", "scraper", "analytics"):
+    for name in ("network", "scraper", "analytics", "datasets"):
         (BRAIN_DIR / name).mkdir(parents=True, exist_ok=True)
     if not INDEX_PATH.exists():
         _write(INDEX_PATH, {"documents": []})
@@ -85,6 +85,11 @@ def upsert_documents(documents: list[dict[str, Any]], source: str = "system") ->
         data = {"version": 1, "documents": list(by_id.values())[-5000:]}
         _write(INDEX_PATH, data)
         _write(META_PATH, {"updated_at": datetime.now(timezone.utc).isoformat(), "documents": len(data["documents"]), "domains": sorted({d.get("domain", "analytics") for d in data["documents"]})})
+        by_domain: dict[str, list[dict[str, Any]]] = {}
+        for doc in data["documents"]:
+            by_domain.setdefault(str(doc.get("domain", "analytics")), []).append(doc)
+        for domain, domain_docs in by_domain.items():
+            _write(BRAIN_DIR / domain / "brain.json", {"version": 1, "domain": domain, "documents": domain_docs})
     return {"added_or_updated": len(clean), "documents": len(data["documents"]), "path": str(BRAIN_DIR)}
 
 
@@ -108,7 +113,15 @@ def status() -> dict[str, Any]:
     data = _load()
     size = INDEX_PATH.stat().st_size if INDEX_PATH.exists() else 0
     domains = sorted({d.get("domain", "analytics") for d in data.get("documents", [])})
-    return {"path": str(BRAIN_DIR), "index": str(INDEX_PATH), "documents": len(data.get("documents", [])), "domains": domains, "index_bytes": size, "healthy": True}
+    excel_count = 0
+    log_count = 0
+    try:
+        from ..scraper import EXCEL_DIR, read_logs
+        excel_count = len(list(EXCEL_DIR.glob("*.xlsx")))
+        log_count = len(read_logs(500))
+    except Exception:
+        pass
+    return {"path": str(BRAIN_DIR), "index": str(INDEX_PATH), "documents": len(data.get("documents", [])), "domains": domains, "index_bytes": size, "excel_files": excel_count, "recent_log_records": log_count, "healthy": True}
 
 
 def train_from_logs(limit: int = 200) -> dict[str, Any]:
