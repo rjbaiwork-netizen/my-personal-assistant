@@ -1,14 +1,16 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from typing import Any
 
 import requests
 
 BASE_DIR = Path(__file__).resolve().parent.parent
-CONFIG_PATH = BASE_DIR / "storage" / "config.json"
-DEFAULT_MODEL = "gemini-2.5-flash"
+STORAGE_DIR = Path(os.getenv("STORAGE_DIR", str(BASE_DIR / "storage"))).resolve()
+CONFIG_PATH = STORAGE_DIR / "config.json"
+DEFAULT_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
 
 
 def _load_config() -> dict[str, Any]:
@@ -21,14 +23,14 @@ def _load_config() -> dict[str, Any]:
 
 
 def _api_key() -> str:
-    config = _load_config()
-    return str(config.get("gemini_api_key") or "").strip()
+    # Environment secret takes precedence over the UI-managed config value.
+    return str(os.getenv("GEMINI_API_KEY") or _load_config().get("gemini_api_key") or "").strip()
 
 
 def chat_with_gemini(message: str, context: str = "") -> str:
     key = _api_key()
     if not key:
-        return "Gemini API key is not configured. Open Admin & Settings and save your Gemini API key."
+        return "Gemini API key is not configured. Set GEMINI_API_KEY or use Admin & Settings."
 
     config = _load_config()
     model = str(config.get("gemini_model") or DEFAULT_MODEL)
@@ -53,9 +55,5 @@ def chat_with_gemini(message: str, context: str = "") -> str:
         parts = data.get("candidates", [{}])[0].get("content", {}).get("parts", [])
         answer = "".join(p.get("text", "") for p in parts).strip()
         return answer or "Gemini returned an empty response."
-    except requests.RequestException as exc:
+    except (requests.RequestException, ValueError) as exc:
         return f"Gemini connection failed: {type(exc).__name__}."
-
-
-def test_configuration() -> bool:
-    return bool(_api_key())
