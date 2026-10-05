@@ -11,8 +11,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
-from ai_assistant import chat_with_gemini
-from scraper import list_excel_files, read_logs, scrape_and_save
+from .ai_assistant import chat_with_gemini
+from .scraper import list_excel_files, read_logs, scrape_and_save
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 STORAGE_DIR = BASE_DIR / "storage"
@@ -108,7 +108,7 @@ def trigger_scrape(payload: ScrapeRequest) -> dict[str, Any]:
 
 @app.get("/api/logs")
 def logs(limit: int = 100) -> dict[str, Any]:
-    return {"records": read_logs(max(1, min(limit, 500)) )}
+    return {"records": read_logs(max(1, min(limit, 500)))}
 
 
 @app.post("/api/chat")
@@ -139,9 +139,7 @@ def create_backup() -> Path:
         root = Path(tmp) / "my-personal-assistant"
         root.mkdir()
         for item in BASE_DIR.iterdir():
-            if item.name in {".git", "storage"}:
-                continue
-            if item.name.startswith("."):
+            if item.name in {".git", "storage"} or item.name.startswith("."):
                 continue
             destination = root / item.name
             if item.is_dir():
@@ -149,7 +147,6 @@ def create_backup() -> Path:
             else:
                 shutil.copy2(item, destination)
 
-        # Copy storage while deliberately excluding old backups and redacting the API key.
         storage_copy = root / "storage"
         storage_copy.mkdir()
         for item in STORAGE_DIR.iterdir():
