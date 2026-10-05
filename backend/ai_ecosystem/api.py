@@ -1,7 +1,7 @@
 from __future__ import annotations
 from typing import Any
 import os
-from fastapi import APIRouter, Header, HTTPException, Query
+from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from pydantic import BaseModel, Field
 from .layer1_manager import Layer1Manager
 from .layer2_rag_store import search as brain_search, status as brain_status
