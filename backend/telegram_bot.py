@@ -94,3 +94,20 @@ async def handle_webhook(request: Request) -> dict[str, bool]:
     update = Update.de_json(payload, app.bot)
     await app.process_update(update)
     return {"ok": True}
+
+
+def validate_mini_app_init_data(init_data: str, max_age_seconds: int = 86400) -> bool:
+    import hashlib, hmac, time
+    from urllib.parse import parse_qsl
+    token = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
+    if not token or not init_data:
+        return False
+    pairs = dict(parse_qsl(init_data, keep_blank_values=True))
+    received = pairs.pop("hash", "")
+    auth_date = int(pairs.get("auth_date", "0") or 0)
+    if not received or not auth_date or time.time() - auth_date > max_age_seconds:
+        return False
+    data_check = "\n".join(f"{k}={pairs[k]}" for k in sorted(pairs))
+    secret = hmac.new(b"WebAppData", token.encode(), hashlib.sha256).digest()
+    expected = hmac.new(secret, data_check.encode(), hashlib.sha256).hexdigest()
+    return hmac.compare_digest(expected, received)
