@@ -1,38 +1,29 @@
 <!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="Single-user Personal AI command center">
-  <title>Dashboard | My Personal Assistant</title>
-  <script src="https://cdn.tailwindcss.com"></script><link rel="stylesheet" href="/styles.css">
-</head>
-<body>
-<header class="site-header"><div class="shell header-inner">
-  <a class="brand" href="/index.html"><span data-brand-logo>🤖</span><span data-brand-name>My Personal Assistant</span></a>
-  <div class="header-meta"><div>Server <span id="serverStatus" class="status-dot">checking…</span></div><div>Today <span data-usage-time>00:00:00</span> / 08:00:00</div></div>
-</div></header>
-<div class="shell page-grid">
-  <div data-navigation></div>
-  <main class="space-y-6">
-    <section><p class="eyebrow">Command Center</p><h1 class="page-title">Personal AI Dashboard</h1><p class="muted">Monitor the server, daily activity, storage and recent collection status.</p></section>
-    <section class="grid sm:grid-cols-2 xl:grid-cols-4 gap-4">
-      <div class="panel stat"><span>Server</span><strong id="dashServer">Checking…</strong></div>
-      <div class="panel stat"><span>Storage Mode</span><strong id="dashMode">Append</strong></div>
-      <div class="panel stat"><span>Excel Files</span><strong id="fileCount">0</strong></div>
-      <div class="panel stat"><span>Daily Usage</span><strong data-usage-percent>0%</strong></div>
-    </section>
-    <section class="panel p-6">
-      <h2 class="section-title">Daily usage</h2><p class="muted">Server-side runtime counter persisted in the configured storage volume. It uses an 8-hour daily reference target; it is not a provider billing/quota meter.</p>
-      <div class="progress mt-5"><div data-usage-bar class="progress-fill" style="width:0%"></div></div>
-      <div class="flex justify-between text-xs muted mt-2"><span data-usage-time>00:00:00</span><span>08:00:00</span></div><p id="serverUsageMeta" class="muted text-xs mt-3">Loading server runtime…</p>
-    </section>
-    <section class="grid lg:grid-cols-2 gap-4">
-      <div class="panel p-6"><h2 class="section-title">System status</h2><p id="statusMessage" class="muted mt-2">Loading…</p></div>
-      <div class="panel p-6"><h2 class="section-title">Quick actions</h2><div class="flex flex-wrap gap-2 mt-4">
-        <a class="primary" href="/scraper.html">Start Scrape</a><a class="secondary" href="/logs.html">View Logs</a><a class="secondary" href="/chat.html">Open AI Chat</a><a class="secondary" href="/backup.html">Backups</a>
-      </div></div>
-    </section>
-  </main>
-</div>
-<script src="/app.js"></script><script>window.MPA_PAGE="dashboard";</script>
-</body></html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Modular AI Ecosystem</title>
+<style>
+:root{font-family:system-ui,sans-serif;color:#e9eef7;background:#0b1020}*{box-sizing:border-box}body{margin:0}header{padding:22px 5%;border-bottom:1px solid #26304a;display:flex;justify-content:space-between}main{max-width:1200px;margin:auto;padding:28px 5%}.tabs button{margin-right:8px;padding:10px 15px;border:1px solid #34415f;background:#111a2f;color:#fff;border-radius:9px}.active{background:#2a3b67!important}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:16px}.card{background:#11182b;border:1px solid #293652;border-radius:14px;padding:18px;margin-top:16px}.muted{color:#9eabc4}.ok{color:#7ee2a8}textarea,input{width:100%;background:#0d1425;color:#fff;border:1px solid #34415f;border-radius:9px;padding:12px}textarea{min-height:100px}button{padding:10px 15px;margin-top:10px;border:0;border-radius:9px;background:#526fe5;color:white}.output{white-space:pre-wrap;background:#080d18;border-radius:10px;padding:14px;margin-top:12px;min-height:60px}.hidden{display:none}.activity{max-height:280px;overflow:auto}.activity div{padding:8px 0;border-bottom:1px solid #26304a}
+</style></head><body>
+<header><div><strong>MODULAR AI ECOSYSTEM</strong><div class="muted">Layer 1 → Layer 2 → Layer 3</div></div><span id="health" class="ok">checking…</span></header>
+<main><div><button id="profileTab" class="active">Page 1 · Profiles</button><button id="dashTab">Page 2 · Dashboard</button></div>
+<section id="profiles"><h2>Management & Profile Center</h2><div id="profileCards" class="grid"></div>
+<div class="card"><h3>Layer 1 · Admin / Training Chat</h3><textarea id="l1msg" placeholder="Management or training instruction…"></textarea><button onclick="chat(1)">Send</button><div id="l1out" class="output"></div></div>
+<div class="card"><h3>Layer 3 · Platform Chat & Execution</h3><textarea id="l3msg" placeholder="Operational request…"></textarea><button onclick="chat(3)">Send</button><div id="l3out" class="output"></div></div>
+<div class="card"><h3>Layer 2 · Brain Summary</h3><div id="brain" class="output">Layer 2 has no chat interface.</div></div></section>
+<section id="dashboard" class="hidden"><h2>Centralized Modular Dashboard</h2><div id="dashCards" class="grid"></div>
+<div class="card"><h3>Recent Activity</h3><div id="activity" class="activity"></div></div>
+<div class="card"><h3>Layer 3 Testing Bridge</h3><input id="target" value="main-project"><button onclick="runTest()">Run Safe Test</button><div id="testout" class="output"></div></div></section></main>
+<script>
+const $=id=>document.getElementById(id);
+async function api(path,opt){const r=await fetch(path,opt);return r.json()}
+async function refresh(){const h=await api('/api/health');$('health').textContent=h.status+' · '+new Date(h.timestamp).toLocaleTimeString();
+const p=await api('/api/profiles');$('profileCards').innerHTML=p.map(x=>'<div class="card"><h3>'+x.layer+'</h3><p>'+x.name+'</p><span class="muted">'+(x.chat?'Chat enabled':'No chat interface')+'</span></div>').join('');
+$('brain').textContent=JSON.stringify(await api('/api/layer2/brain'),null,2);const d=await api('/api/dashboard');
+$('dashCards').innerHTML=Object.entries(d.layers).map(([k,v])=>'<div class="card"><h3>'+k.toUpperCase()+'</h3><p class="ok">'+v.status+'</p><p class="muted">'+v.role+'</p></div>').join('');
+$('activity').innerHTML=d.recent_activity.length?d.recent_activity.map(e=>'<div><b>'+e.event+'</b> — '+e.detail+'<br><small class="muted">'+e.timestamp+'</small></div>').join(''):'<span class="muted">No activity yet.</span>'}
+async function chat(l){const msg=$('l'+l+'msg').value;$('l'+l+'out').textContent='Working…';const r=await api('/api/layer'+l+'/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:msg})});$('l'+l+'out').textContent=JSON.stringify(r,null,2);refresh()}
+async function runTest(){const r=await api('/api/testing/run',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({target:$('target').value,mode:'read-only'})});$('testout').textContent=JSON.stringify(r,null,2);refresh()}
+$('profileTab').onclick=()=>{$('profiles').classList.remove('hidden');$('dashboard').classList.add('hidden');$('profileTab').classList.add('active');$('dashTab').classList.remove('active')};
+$('dashTab').onclick=()=>{$('profiles').classList.add('hidden');$('dashboard').classList.remove('hidden');$('dashTab').classList.add('active');$('profileTab').classList.remove('active');refresh()};
+refresh();setInterval(refresh,5000);
+</script></body></html>
