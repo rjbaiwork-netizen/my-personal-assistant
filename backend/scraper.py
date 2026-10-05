@@ -39,18 +39,22 @@ def _unique_path(stem: str) -> Path:
 def _fetch_preview(platform: str, topic: str) -> str:
     url_template = PLATFORMS.get(platform)
     if not url_template:
-        return "Simulation mode: no public connector configured for this platform."
+        return "No public connector configured for this platform."
     try:
         url = url_template.format(query=quote_plus(topic))
         response = requests.get(
             url,
             timeout=8,
-            headers={"User-Agent": "MyPersonalAssistant/1.0 (+personal research tool)"},
+            headers={
+                "User-Agent": (
+                    "Mozilla/5.0 (compatible; MyPersonalAssistant/2.0; "
+                    "+https://github.com/rjbaiwork-netizen/my-personal-assistant)"
+                )
+            },
         )
         response.raise_for_status()
         text = re.sub(r"\s+", " ", response.text)
-        # Keep only a small diagnostic preview; do not claim it is a parsed result.
-        return f"HTTP {response.status_code}; fetched public page preview ({min(len(text), 240)} chars)."
+        return f"HTTP {response.status_code}; public page fetched ({min(len(text), 240)} chars preview)."
     except requests.RequestException as exc:
         return f"Fetch unavailable: {type(exc).__name__}."
 
@@ -59,6 +63,7 @@ def scrape_and_save(topic: str, platform: str, storage_mode: str, file_name: str
     topic = (topic or "").strip()
     platform = (platform or "All Platforms").strip()
     storage_mode = (storage_mode or "append").lower().strip()
+
     if not topic:
         raise ValueError("Topic / Keywords is required.")
     if storage_mode not in {"append", "new"}:
@@ -87,11 +92,14 @@ def scrape_and_save(topic: str, platform: str, storage_mode: str, file_name: str
         path = EXCEL_DIR / f"{stem}.xlsx"
         if path.exists():
             existing = pd.read_excel(path)
-            for col in COLUMNS:
-                if col not in existing.columns:
-                    existing[col] = ""
+            for column in COLUMNS:
+                if column not in existing.columns:
+                    existing[column] = ""
             existing = existing[COLUMNS]
-            frame = pd.concat([existing, pd.DataFrame(rows, columns=COLUMNS)], ignore_index=True)
+            frame = pd.concat(
+                [existing, pd.DataFrame(rows, columns=COLUMNS)],
+                ignore_index=True,
+            )
         else:
             frame = pd.DataFrame(rows, columns=COLUMNS)
     else:
