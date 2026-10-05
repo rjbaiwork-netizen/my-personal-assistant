@@ -1,0 +1,19 @@
+name: Sync to Hugging Face Space
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  sync:
+    if: ${{ secrets.HF_TOKEN != '' && secrets.HF_SPACE_ID != '' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Sync repository to Hugging Face Hub
+        uses: huggingface/hub-sync@v0.3.0
+        with:
+          github_repo_id: ${{ github.repository }}
+          huggingface_repo_id: ${{ secrets.HF_SPACE_ID }}
+          hf_token: ${{ secrets.HF_TOKEN }}
+          space_sdk: docker
