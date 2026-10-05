@@ -30,7 +30,7 @@ from .rag_store import context_for, rebuild_index, search as rag_search
 from .agent_workflow import run_multi_agent_workflow
 from .rss_worker import recent_items, sync_feeds
 from .security_monitor import alert_unauthorized, check_resource_pressure
-from .telegram_bot import configure_scrape_callback, handle_webhook, initialize as initialize_telegram_bot, shutdown as shutdown_telegram_bot
+from .telegram_bot import configure_scrape_callback, handle_webhook, initialize as initialize_telegram_bot, shutdown as shutdown_telegram_bot, validate_mini_app_init_data
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 STORAGE_DIR = Path(os.getenv("STORAGE_DIR", str(BASE_DIR / "storage"))).resolve()
@@ -378,6 +378,20 @@ async def event_trigger(request: Request):
     context = await asyncio.to_thread(context_for, message, 6)
     answer = await asyncio.to_thread(chat_with_gemini, message, context)
     await notify_ai(message, answer)
+    return {"ok": True, "answer": answer}
+
+
+@app.post("/api/telegram/miniapp")
+async def telegram_miniapp(request: Request):
+    payload = await request.json()
+    init_data = request.headers.get("X-Telegram-Init-Data") or str(payload.get("initData", ""))
+    if not validate_mini_app_init_data(init_data):
+        raise HTTPException(status_code=401, detail="Invalid or expired Telegram Mini-App initData.")
+    message = str(payload.get("message") or "").strip()
+    if not message:
+        return {"ok": True, "message": "Mini-App authenticated."}
+    context = await asyncio.to_thread(context_for, message, 6)
+    answer = await asyncio.to_thread(chat_with_gemini, message, context)
     return {"ok": True, "answer": answer}
 
 @app.post("/api/telegram/webhook")
